@@ -1,0 +1,60 @@
+---
+title: "Assignment"
+author: "Amin Fadaee"
+date: "September 11, 2017"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+We are trying to do a machine learning prediction task on pml dataset and predict for the variable `classe` which comprise of 5 ctegories of `A,B,C,D,E`. 
+Lets load in the `caret` library and then the datasets.
+```{r, warning=FALSE,message=FALSE}
+library(caret)
+training <- read.csv('pml-training.csv')
+testing <- read.csv('pml-testing.csv')
+```
+The `testing` data is not the data set we are going to use for testing the model we are about to use and it's going to be deployed for predicting the quiz. So we should do some data splitting among with a little preprocessing to deal with `NA`s in our datasets:
+
+```{r}
+testing <- replace(testing,is.na(testing),0)
+training <- replace(training,is.na(training),0)
+
+indecies <- sample(dim(training)[1],ceiling(dim(training)[1]*0.2))
+training_train <- training[-indecies,]
+training_test <- training[indecies,]
+```
+We are going to use the `training_train` to train our model and `training_test` which is 20% of the original data to test it and obtain an **out of sample** error estimation for our prediction.
+
+As stated in the lecrues gradient boosting machine is a good ensemble method for the task of prediction and that is the reason we are going to harness its power for our task.
+
+The gbm is going to take a lot of time if done on the whole variables. So in order to speed it up we are going to obtain 50 principle components which will not only capture the general varience in the data but it will also help in avoiding overfitting to the training data:
+```{r}
+n = 50
+pca <- preProcess(training_train,method='pca',pcaComp = n)
+trainpca <- predict(pca,training_train)
+trainpca <- trainpca[(dim(trainpca)[2]-n) : dim(trainpca)[2]]
+trainpcatest <- predict(pca,training_test)
+trainpcatest <- trainpcatest[(dim(trainpcatest)[2]-n) : dim(trainpcatest)[2]]
+testpca <- predict(pca,testing)
+testpca <- testpca[(dim(testpca)[2]-n+1) : dim(testpca)[2]]
+```
+And now for training our model:
+```{r cache=TRUE, message=FALSE,include=FALSE}
+model<- train(classe~.,data=trainpca,trControl=trainControl(method="cv", number=10),method='gbm')
+```
+And now lets see the parameters and plots:
+```{r}
+model
+confusionMatrix(predict(model),trainpca$classe)
+```
+As can be seen the prediction accuracy based on **10 fold cross validation** is `r confusionMatrix(predict(model),trainpca$classe)$overall[[1]]` which is quite good. Here we can also see the **parameter tuning and different model selections** which has taken place based on validation sets:
+```{r}
+plot(model)
+```
+but lets also test the model on `training_test` to get a general estimation of the **out of sample error**:
+```{r}
+accuracy <- sum(trainpcatest$classe == predict(model,newdata=trainpcatest[2:dim(trainpcatest)[2]]))/dim(trainpcatest)[2]
+accuracy
+```
+This value is a proof that the model has a good accuracy and can be used for prediction tasks.
